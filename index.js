@@ -23,8 +23,7 @@ const corsOptions = {
         if (whitelistOrigin.includes(origin))
             callback(null, true)
         else {
-            whitelistOrigin.push(origin);
-            callback(new Error(`${origin} can be used now`));
+            callback(new Error(`${origin} is not allowed`));
         }
     }
 };
