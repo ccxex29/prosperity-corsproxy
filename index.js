@@ -12,15 +12,19 @@ const app = express();
 app.set('view engine', 'pug');
 app.set('views', './Views');
 
-app.use(express.json());
-app.use('/', about);
-app.use('/proxy', proxy);
-
+// ------------
+// CORS Configurations
 const whitelistOrigin = ['http://localhost:[0-9]{2-5}'];
 const corsOptions = {
     origin: true
 };
+
+app.use(express.json());
 app.use(cors(corsOptions));
+app.use('/', about);
+app.use('/proxy', proxy);
+
+
 
 if (app.get('env') === 'development'){
     app.use(morgan('tiny'));
