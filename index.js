@@ -18,7 +18,7 @@ app.use('/proxy', proxy);
 
 const whitelistOrigin = ['http://localhost:[0-9]{2-5}'];
 const corsOptions = {
-    origin: whitelistOrigin
+    origin: true
 };
 app.use(cors(corsOptions));
 
