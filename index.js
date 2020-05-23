@@ -19,7 +19,7 @@ app.use('/proxy', proxy);
 
 const blacklistOrigin = [];
 const corsOptions = {
-    origin: true
+    origin: (origin, callback) => callback(null, true)
 };
 app.use(cors(corsOptions));
 
