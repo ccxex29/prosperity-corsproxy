@@ -20,7 +20,7 @@ app.use('/proxy', proxy);
 const whitelistOrigin = ['http://localhost:3000'];
 const corsOptions = {
     credentials: true,
-    origin: true
+    origin: whitelistOrigin
 };
 app.use(cors(corsOptions));
 
