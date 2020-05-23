@@ -16,14 +16,9 @@ app.use(express.json());
 app.use('/', about);
 app.use('/proxy', proxy);
 
-const whitelistOrigin = ['http://localhost:3000'];
+const whitelistOrigin = ['http://localhost:[0-9]{2-5}'];
 const corsOptions = {
-    origin: (origin, callback) => {
-        if (whitelistOrigin.indexOf(origin) !== -1)
-            callback(null, true)
-        else
-            callback(new Error('Not allowed by CORS'))
-    }
+    origin: whitelistOrigin
 };
 app.use(cors(corsOptions));
 
