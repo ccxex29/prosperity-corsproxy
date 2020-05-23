@@ -13,7 +13,6 @@ app.set('view engine', 'pug');
 app.set('views', './Views');
 
 app.use(express.json());
-app.use(cors());
 app.use('/', about);
 app.use('/proxy', proxy);
 
