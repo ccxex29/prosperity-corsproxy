@@ -1,0 +1,17 @@
+{
+  "name": "prosperity-corsproxy",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "axios-cookiejar-support": "^1.0.0",
+    "cheerio": "^1.0.0-rc.3",
+    "cors": "^2.8.5",
+    "cors-anywhere": "^0.4.3",
+    "express": "^4.17.1",
+    "morgan": "^1.10.0",
+    "pug": "^2.0.4",
+    "tough-cookie": "^4.0.0"
+  }
+}
