@@ -100,7 +100,7 @@ router.post('/getdata', async (req, res) => {
 router.post('/getxmldata', async (req, res) => {
     try {
         if (!req.body.userId || !req.body.pwd || !req.body.mode || !req.body.requestModel || !req.body.pathURL)
-            res.status(400).send('Bad Request: Property requirements are not satisfied')
+            res.status(400).send('Bad Request: Property requirements are not satisfied');
 
         // Initiate stuffs
         let configLogin = undefined;
@@ -135,8 +135,8 @@ router.post('/getxmldata', async (req, res) => {
         // Processing Data
         let termListObj = [];
         const clearTargetTerm = () => {
-            for (let i = 0; i < termListObj; i++) {
-                requestModel[`SSR_DUMMY_RECV1$sels$${i}$$0`] = undefined;
+            for (let i = 0; i < termListObj.length; i++) {
+                delete requestModel[`SSR_DUMMY_RECV1$sels$${i}$$0`];
             }
         };
 
