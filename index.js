@@ -19,6 +19,8 @@ const corsOptions = {
     origin: true
 };
 
+// ------------
+// Express Middlewares
 app.use(express.json());
 app.use(cors(corsOptions));
 app.use('/', about);
