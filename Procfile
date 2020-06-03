@@ -1,1 +1,1 @@
-web: NODE_ENV=production node index.js
+web: NODE_ENV=production node --max-old-space-size=512 --expose-gc index.js
