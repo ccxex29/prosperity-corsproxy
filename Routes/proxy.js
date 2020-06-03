@@ -3,6 +3,7 @@ const router = express.Router();
 const axios = require('axios');
 const cheerio = require('cheerio');
 const QueryString = require('querystring');
+const axiosRetry = require('axios-retry');
 
 const toughCookie = require('tough-cookie');
 const axiosCookieJar = require('axios-cookiejar-support').default;
@@ -119,8 +120,9 @@ router.post('/getxmldata', async (req, res) => {
         else
             res.status(400).send('Bad Request: Invalid \`mode\` provided. Only \`default\` is currently available');
 
-        // Login
+        // Login Cookie
         configLogin = await getCookie(loginAddr, loginQuery, configLogin);
+
         if (!configLogin)
             res.status(500).send('Internal Server Error');
         if (JSON.stringify(configLogin.jar) === JSON.stringify({}))
@@ -131,6 +133,9 @@ router.post('/getxmldata', async (req, res) => {
         const sess = axios.create({
             baseURL: baseUrl
         });
+
+        // Set max retry to 10x
+        axiosRetry(sess, { retries: 10, retryDelay: axiosRetry.exponentialDelay });
 
         // Processing Data
         let termListObj = [];
@@ -146,8 +151,8 @@ router.post('/getxmldata', async (req, res) => {
                 const $ = cheerio.load(res.data, {normalizeWhitespace: true});
                 const termList = $('#SSR_DUMMY_RECV1\\$scroll\\$0 tbody tr');
 
-                for (let i = 0; i < termList.length; i++) {
-                    const termListTrElement = $(termList[i]).find(`.PSLEVEL2GRIDROW #win0divTERM_VAL\\$${i - 2} #TERM_VAL\\$${i - 2}`);
+                for (let i = 2; i < termList.length; i++) {
+                    const termListTrElement = $(termList[i]).find(`#TERM_VAL\\$${ i-2 }`);
                     if (termListTrElement.text().match(/\w+/g)) {
                         termListObj.push({
                             termName: termListTrElement.text(),
@@ -155,7 +160,8 @@ router.post('/getxmldata', async (req, res) => {
                         });
                     }
                 }
-            });
+            })
+            .catch(err => console.log(new Error(err)));
 
         try {
             for (let numwhere = 0; numwhere < termListObj.length; numwhere++) {
@@ -163,40 +169,69 @@ router.post('/getxmldata', async (req, res) => {
                 const ic = await sess.get(pathUrl,
                     configLogin)
                     .then(res => {
-                        const $ = cheerio.load(res.data, {normalizeWhitespace: true});
-                        const sid = $('input[id=\'ICSID\']').attr('value');
-                        const statenum = $('input[id=\'ICStateNum\']').attr('value');
+                        const $ = cheerio.load(res.data, { normalizeWhitespace: true });
+                        const sid = $('input#ICSID').attr('value');
+                        const statenum = $('input#ICStateNum').attr('value');
                         return {
                             sid: sid,
                             statenum: statenum
                         };
                     })
-                    .catch(err => new Error(err));
+                    .catch(err => console.log(new Error(err)));
 
                 requestModel['ICSID'] = ic.sid;
                 requestModel['ICStateNum'] = ic.statenum;
-
-
+                requestModel['ICAction'] = 'DERIVED_SSS_SCT_SSR_PB_GO';
                 clearTargetTerm();
                 requestModel[`SSR_DUMMY_RECV1$sels$${numwhere}$$0`] = numwhere;
+
                 await sess.post(pathUrl,
                     QueryString.stringify(requestModel),
                     configLogin)
-                    .then(res => {
+                    .then( async res => {
                         const $ = cheerio.load(res.data);
                         const courseTable = $('#CLASS_TBL\\$scroll\\$0 tbody tr');
-                        for (let i = 0; i < courseTable.length; i++) {
-                            const tableRow = $(courseTable[i]).find(`#trCLASS_TBL\\$0_row${i} .PSLEVEL1GRIDROW`);
-                            const courseName = $(tableRow).find(`#win0divCLASSTITLE\\$${i - 1} #CLASSTITLE\\$span\\$${i - 1} #CLASSTITLE\\$${i - 1}`);
-                            const courseId = $(tableRow).find(`#win0divSS_LAM_CLAS_VW2_CRSE_ID\\$${i - 1} #SS_LAM_CLAS_VW2_CRSE_ID\\$${i - 1}`);
-                            if (courseName.text().match(/\w+/g))
-                                termListObj[numwhere].courseList.push({
-                                    courseId: courseId.text(),
-                                    courseName: courseName.text()
-                                });
+                        requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
+                        for (let i = 1; i < courseTable.length; i++) {
+                            const coursePost = {
+                                ...requestModel,
+                                "ICAction": `CLASSTITLE$${i-1}`
+                            };
+                            await sess.post('/psc/ps/EMPLOYEE/HRMS/c/SA_LEARNER_SERVICES.SS_LAM_STD_GR_LST.GBL',
+                                QueryString.stringify(coursePost),
+                                configLogin)
+                                .then(async res => {
+                                    const $ = cheerio.load(res.data, { normalizeWhitespace: true, xmlMode: true });
+                                    const xmlScript = $('GENSCRIPT#onloadScript');
+                                    const courseUri = xmlScript.text().replace(/^.*document\.location='/g, '').replace(/';$/g, '').replace(/^http:\/\/web.academic.uph.edu/g, '');
+                                    // console.log(courseUri);
+                                    termListObj[numwhere].courseList.push({
+                                        courseUri: courseUri,
+                                        courseGrade: []
+                                    });
+                                })
+                                .catch(err => console.log(new Error(err)));
+                        }
+                        for (let i = 1; i < courseTable.length; i++){
+                            await sess.get(termListObj[numwhere].courseList[i-1].courseUri, configLogin) // Get Course Details
+                                .then(res => {
+                                    const $ = cheerio.load(res.data, { normalizeWhitespace: true });
+                                    const courseName = $('#DERIVED_SSR_FC_DESCR254');
+                                    termListObj[numwhere].courseList[i-1].courseFullName = courseName.text(); // Course Name
+                                    const courseGradeRow = $(`#STDNT_GRADE_DTL\\$scrolli\\$0 tbody tr td table.PSLEVEL1GRID tbody tr`);
+                                    for (let j = 1; j < courseGradeRow.length; j++){
+                                        const courseGradeType = $(courseGradeRow[j]).find(`#CATEGORY\\$${j-1}`);
+                                        const courseGradeValue = $(courseGradeRow[j]).find(`#STDNT_GRADE_DTL_STUDENT_GRADE\\$${j-1}`);
+                                        termListObj[numwhere].courseList[i-1].courseGrade.push({
+                                            courseGradeType: courseGradeType.text(),
+                                            courseGradeValue: courseGradeValue.text()
+                                        });
+                                    }
+                                })
+                                .catch(err => console.log(new Error(err)));
                         }
                     })
-                    .catch(err => new Error(err));
+                    .catch(err => console.log(new Error(err)));
             }
             res.send(termListObj);
         } catch (e) {
