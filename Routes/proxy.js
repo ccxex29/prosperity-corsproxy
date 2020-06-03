@@ -98,10 +98,27 @@ router.post('/getdata', async (req, res) => {
  * but there is one site that the requestModel will be used to replace the provided requestModel
  * the mode is only 'default' for now that is for fetching all grades
  */
+
 router.post('/getxmldata', async (req, res) => {
+    // const space = '';
+    // let stopWaiting = false;
+    // const sendWhiteSpace = () => {
+    //     setTimeout(() => {
+    //         if (!res.headersSent)
+    //             res.writeHead(202);
+    //         res.write(space);
+    //         if (!stopWaiting) {
+    //             clearTimeout(sendWhiteSpace);
+    //             sendWhiteSpace();
+    //         }
+    //     }, 1000);
+    // };
+    // sendWhiteSpace();
     try {
-        if (!req.body.userId || !req.body.pwd || !req.body.mode || !req.body.requestModel || !req.body.pathURL)
+        if (!req.body.userId || !req.body.pwd || !req.body.mode || !req.body.requestModel || !req.body.pathURL) {
+            // stopWaiting = true;
             res.status(400).send('Bad Request: Property requirements are not satisfied');
+        }
 
         // Initiate stuffs
         let configLogin = undefined;
@@ -117,17 +134,21 @@ router.post('/getxmldata', async (req, res) => {
         });
         if (req.body.mode === 'default')
             requestModel = req.body.requestModel;
-        else
+        else {
+            // stopWaiting = true;
             res.status(400).send('Bad Request: Invalid \`mode\` provided. Only \`default\` is currently available');
-
+        }
         // Login Cookie
         configLogin = await getCookie(loginAddr, loginQuery, configLogin);
 
-        if (!configLogin)
+        if (!configLogin) {
+            // stopWaiting = true;
             res.status(500).send('Internal Server Error');
-        if (JSON.stringify(configLogin.jar) === JSON.stringify({}))
+        }
+        if (JSON.stringify(configLogin.jar) === JSON.stringify({})) {
+            // stopWaiting = true;
             res.status(401).send('Could not get cookie. Given userid or pwd may be wrong');
-
+        }
 
         // Initiate Axios Session
         const sess = axios.create({
@@ -147,7 +168,7 @@ router.post('/getxmldata', async (req, res) => {
 
         await sess.get(pathUrl,
             configLogin)
-            .then(res => {
+            .then(async res => {
                 const $ = cheerio.load(res.data, {normalizeWhitespace: true});
                 const termList = $('#SSR_DUMMY_RECV1\\$scroll\\$0 tbody tr');
 
@@ -163,9 +184,9 @@ router.post('/getxmldata', async (req, res) => {
             })
             .catch(err => console.log(new Error(err)));
 
-        try {
-            for (let numwhere = 0; numwhere < termListObj.length; numwhere++) {
-                // console.log('TERM: ' + termListObj[numwhere].termName);
+        for (let numwhere = 0; numwhere <= termListObj.length; numwhere++) { // should be <, temporarily with <= because of a weird asynchronous bug
+            const termFn = async () => {
+                // process.stdout.write(`${numwhere}\n`);
                 const ic = await sess.get(pathUrl,
                     configLogin)
                     .then(res => {
@@ -179,67 +200,92 @@ router.post('/getxmldata', async (req, res) => {
                     })
                     .catch(err => console.log(new Error(err)));
 
-                requestModel['ICSID'] = ic.sid;
-                requestModel['ICStateNum'] = ic.statenum;
-                requestModel['ICAction'] = 'DERIVED_SSS_SCT_SSR_PB_GO';
-                clearTargetTerm();
-                requestModel[`SSR_DUMMY_RECV1$sels$${numwhere}$$0`] = numwhere;
+                const modifyRequest = () => {
+                    clearTargetTerm();
+                    requestModel['ICSID'] = ic.sid;
+                    requestModel['ICStateNum'] = ic.statenum;
+                    requestModel['ICAction'] = 'DERIVED_SSS_SCT_SSR_PB_GO';
+                    requestModel[`SSR_DUMMY_RECV1$sels$${numwhere}$$0`] = numwhere;
+                };
+                modifyRequest();
 
-                await sess.post(pathUrl,
-                    QueryString.stringify(requestModel),
-                    configLogin)
-                    .then( async res => {
-                        const $ = cheerio.load(res.data);
-                        const courseTable = $('#CLASS_TBL\\$scroll\\$0 tbody tr');
-                        requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
-                        for (let i = 1; i < courseTable.length; i++) {
-                            const coursePost = {
-                                ...requestModel,
-                                "ICAction": `CLASSTITLE$${i-1}`
-                            };
-                            await sess.post('/psc/ps/EMPLOYEE/HRMS/c/SA_LEARNER_SERVICES.SS_LAM_STD_GR_LST.GBL',
-                                QueryString.stringify(coursePost),
-                                configLogin)
-                                .then(async res => {
-                                    requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
-                                    const $ = cheerio.load(res.data, { normalizeWhitespace: true, xmlMode: true });
-                                    const xmlScript = $('GENSCRIPT#onloadScript');
-                                    const courseUri = xmlScript.text().replace(/^.*document\.location='/g, '').replace(/';$/g, '').replace(/^http:\/\/web.academic.uph.edu/g, '');
-                                    // console.log(courseUri);
-                                    termListObj[numwhere].courseList.push({
-                                        courseUri: courseUri,
-                                        courseGrade: []
-                                    });
-                                })
-                                .catch(err => console.log(new Error(err)));
-                        }
-                        for (let i = 1; i < courseTable.length; i++){
-                            await sess.get(termListObj[numwhere].courseList[i-1].courseUri, configLogin) // Get Course Details
-                                .then(res => {
-                                    const $ = cheerio.load(res.data, { normalizeWhitespace: true });
-                                    const courseName = $('#DERIVED_SSR_FC_DESCR254');
-                                    termListObj[numwhere].courseList[i-1].courseFullName = courseName.text(); // Course Name
-                                    const courseGradeRow = $(`#STDNT_GRADE_DTL\\$scrolli\\$0 tbody tr td table.PSLEVEL1GRID tbody tr`);
-                                    for (let j = 1; j < courseGradeRow.length; j++){
-                                        const courseGradeType = $(courseGradeRow[j]).find(`#CATEGORY\\$${j-1}`);
-                                        const courseGradeValue = $(courseGradeRow[j]).find(`#STDNT_GRADE_DTL_STUDENT_GRADE\\$${j-1}`);
-                                        termListObj[numwhere].courseList[i-1].courseGrade.push({
-                                            courseGradeType: courseGradeType.text(),
-                                            courseGradeValue: courseGradeValue.text()
-                                        });
+                const getCoursePost = async () => {
+                    await sess.post(pathUrl,
+                        QueryString.stringify(requestModel),
+                        configLogin)
+                        .then(async res => {
+                            const $ = cheerio.load(res.data);
+                            const courseTable = $('#CLASS_TBL\\$scroll\\$0 tbody tr');
+                            requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
+                            let arrayOfSess = [];
+                            const loopCourseTable = async () => {
+                                for (let i = 1; i < courseTable.length; i++) {
+                                    const findCourseUri = async () => {
+                                        const coursePost = {
+                                            ...requestModel,
+                                            "ICAction": `CLASSTITLE$${i - 1}`
+                                        };
+                                        await sess.post('/psc/ps/EMPLOYEE/HRMS/c/SA_LEARNER_SERVICES.SS_LAM_STD_GR_LST.GBL',
+                                            QueryString.stringify(coursePost),
+                                            configLogin)
+                                            .then(res => {
+                                                requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
+                                                const $ = cheerio.load(res.data, {
+                                                    normalizeWhitespace: true,
+                                                    xmlMode: true
+                                                });
+                                                const xmlScript = $('GENSCRIPT#onloadScript');
+                                                const courseUri = xmlScript.text().replace(/^.*document\.location='/g, '').replace(/';$/g, '').replace(/^http:\/\/web.academic.uph.edu/g, '');
+                                                // console.log(courseUri);
+                                                termListObj[numwhere].courseList.push({
+                                                    courseUri: courseUri,
+                                                    courseGrade: []
+                                                });
+                                            })
+                                            .catch(err => console.log(new Error(err)));
                                     }
-                                })
-                                .catch(err => console.log(new Error(err), termListObj[numwhere].courseList[i-1].courseUri));
-                        }
-                    })
-                    .catch(err => console.log(new Error(err)));
-            }
-            res.send(termListObj);
-        } catch (e) {
-            console.log(e);
-            res.status(500).send('Internal Server Error\n' + new Error(e))
+                                    await findCourseUri();
+                                }
+                            };
+                            const fillArrayOfSess = () => {
+                                for (let i = 1; i < courseTable.length; i++) {
+                                    arrayOfSess.push(() => {
+                                        sess.get(termListObj[numwhere].courseList[i - 1].courseUri, configLogin) // Get Course Details
+                                            .then(res => {
+                                                const $ = cheerio.load(res.data, {normalizeWhitespace: true});
+                                                const courseName = $('#DERIVED_SSR_FC_DESCR254');
+                                                termListObj[numwhere].courseList[i - 1].courseFullName = courseName.text(); // Course Name
+                                                const courseGradeRow = $(`#STDNT_GRADE_DTL\\$scrolli\\$0 tbody tr td table.PSLEVEL1GRID tbody tr`);
+                                                for (let j = 1; j < courseGradeRow.length; j++) {
+                                                    // global.gc();
+                                                    // process.stdout.write(`${numwhere} ${termListObj.length} ${i} ${courseTable.length} ${j} ${courseGradeRow.length}\n`);
+                                                    const courseGradeType = $(courseGradeRow[j]).find(`#CATEGORY\\$${j - 1}`);
+                                                    const courseGradeValue = $(courseGradeRow[j]).find(`#STDNT_GRADE_DTL_STUDENT_GRADE\\$${j - 1}`);
+                                                    termListObj[numwhere].courseList[i - 1].courseGrade.push({
+                                                        courseGradeType: courseGradeType.text(),
+                                                        courseGradeValue: courseGradeValue.text()
+                                                    });
+                                                }
+                                            })
+                                            .catch(err => console.log(new Error(err), termListObj[numwhere].courseList[i - 1].courseUri));
+                                    });
+                                }
+                            };
+                            await loopCourseTable();
+                            await fillArrayOfSess();
+                            await Promise.all(arrayOfSess.map(elem => elem()));
+                        })
+                        .catch(err => console.log(new Error(err)));
+                }
+                await getCoursePost();
+                // console.log('Next');
+            };
+            await termFn();
         }
-    }catch (e) {
+        // stopWaiting = true;
+        res.send(termListObj);
+
+    } catch (e) {
         res.status(500).send('Unknown Internal Server Error');
     }
 });
