@@ -228,7 +228,7 @@ router.post('/getxmldata', async (req, res) => {
                                         });
                                     }
                                 })
-                                .catch(err => console.log(new Error(err)));
+                                .catch(err => console.log(new Error(err), termListObj[numwhere].courseList[i-1].courseUri));
                         }
                     })
                     .catch(err => console.log(new Error(err)));
