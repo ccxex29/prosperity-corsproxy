@@ -278,7 +278,7 @@ router.post('/getxmldata', async (req, res) => {
                         .catch(err => console.log(new Error(err)));
                 }
                 await getCoursePost();
-                // console.log('Next');
+                global.gc();
             };
             await termFn();
         }
