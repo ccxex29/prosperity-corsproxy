@@ -201,6 +201,7 @@ router.post('/getxmldata', async (req, res) => {
                                 QueryString.stringify(coursePost),
                                 configLogin)
                                 .then(async res => {
+                                    requestModel['ICStateNum'] = (parseInt(requestModel['ICStateNum']) + 1).toString();
                                     const $ = cheerio.load(res.data, { normalizeWhitespace: true, xmlMode: true });
                                     const xmlScript = $('GENSCRIPT#onloadScript');
                                     const courseUri = xmlScript.text().replace(/^.*document\.location='/g, '').replace(/';$/g, '').replace(/^http:\/\/web.academic.uph.edu/g, '');
